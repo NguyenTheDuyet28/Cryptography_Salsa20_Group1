@@ -70,7 +70,7 @@ int main() {
 	uint8_t plaintext[MAX_SIZE + 1];
 	printf("Nhap plaintext (toi da %d bytes):\n", MAX_SIZE);
 	// Dùng scanf với %64[^\n] để đọc tối đa 64 ký tự (bao gồm cả dấu cách) cho đến khi gặp \n
-	if (scanf_s("%64[^\n]", plaintext, MAX_SIZE) != 1) {
+	if (scanf("%64[^\n]", plaintext) != 1) {
 		// Xử lý trường hợp người dùng chỉ nhấn Enter (chuỗi rỗng)
 		plaintext[0] = '\0';
 	}
@@ -158,3 +158,4 @@ int main() {
 
 	return 0;
 }
+
