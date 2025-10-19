@@ -82,7 +82,7 @@ void perform_salsa20(uint8_t key[32], int key_len, uint8_t nonce[8],
     for (i = 0; i < (size_t)key_len; i++) printf("%02x", key[i]);
     printf("\nNonce (8 byte - Dang Hex): \n");
     for (i = 0; i < 8; i++) printf("%02x", nonce[i]);
-    printf("\nBlock Counter: %llu\n", block_counter);
+    printf("\nBlock Counter: %lu\n", block_counter);
 
     printf("Plaintext (Dang chuoi): %s\n", plaintext);
     printf("Plaintext (%zu byte - Dang Hex):\n", length);
@@ -166,7 +166,7 @@ void run_user(void) {
     if (hex_string_to_bytes(nonce, nonce_hex, 8) != 0) return;
 
     printf("Nhap bo dem khoi (vi du: 7): ");
-    if (scanf("%llu", &block_counter) != 1) {
+    if (scanf("%lu", &block_counter) != 1) {
         printf("Loi doc bo dem khoi.\n"); clean_stdin(); return;
     }
     clean_stdin();
@@ -358,7 +358,7 @@ void run_test_vectors(void) {
     for (i = 0; i < (size_t)key_len; i++) printf("%02x", key[i]);
     printf("\nNonce (IV) (8 byte - Dang Hex): \n");
     for (i = 0; i < 8; i++) printf("%02x", nonce[i]);
-    printf("\nBo dem khoi (tu stream[0..63]): %llu\n", block_counter);
+    printf("\nBo dem khoi (tu stream[0..63]): %lu\n", block_counter);
 
     printf("\n--- Keystream[0..63] KY VONG (tu file) ---\n");
     for (i = 0; i < 64; ++i) {
@@ -380,3 +380,4 @@ void run_test_vectors(void) {
         printf("\n=> XAC MINH THAT BAI: Keystream tinh toan khong khop voi file.\n");
     }
 }
+
