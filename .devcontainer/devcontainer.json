@@ -1,23 +1,23 @@
 {
-    "name": "C Salsa20 Environment", 
-    // Su dung anh co san cua Dev Containers cho C/C++ voi GCC va Clang
-    "image": "mcr.microsoft.com/devcontainers/cpp:latest",
-    
-    "features": {
-        // Them cac cong cu ho tro khac neu can
-        "ghcr.io/devcontainers/features/common-utils:2": {}
-    },
+"name": "C Salsa20 Environment", 
+// Su dung anh co san cua Dev Containers cho C/C++ voi GCC va Clang
+"image": "mcr.microsoft.com/devcontainers/cpp:latest",
 
-    // VS Code extensions can thiet cho C/C++
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.cpptools-extension-pack" 
-            ]
-        }
-    },
+"features": {
+// Them cac cong cu ho tro khac neu can
+"ghcr.io/devcontainers/features/common-utils:2": {}
+},
 
-    "postCreateCommand": "gcc --version",
-    
-    "remoteUser": "vscode"
+// VS Code extensions can thiet cho C/C++
+"customizations": {
+"vscode": {
+          "extensions": [
+              "ms-vscode.cpptools-extension-pack" 
+          ]
+      }
+  },
+
+  "postCreateCommand": "gcc --version",
+  
+  "remoteUser": "vscode"
 }
