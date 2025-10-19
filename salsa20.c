@@ -74,4 +74,5 @@ int hex_string_to_bytes(uint8_t* dest, const char* src, size_t dest_len) {
 		dest[i] = (uint8_t)((high << 4) | low);
 	}
 	return 0; // Thành công
+
 }
