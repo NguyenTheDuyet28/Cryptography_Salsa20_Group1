@@ -1,31 +1,38 @@
 #define _CRT_SECURE_NO_WARNINGS
+
 #ifdef _WIN32
-    #include <windows.h>  
-    #include <bcrypt.h>   
-    #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
-    #pragma comment(lib, "bcrypt.lib")
+#include <windows.h>
+#include <bcrypt.h>
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#pragma comment(lib, "bcrypt.lib")
+#define U64_FORMAT "%llu"
 #else
-    #include <fcntl.h>  // Cho O_RDONLY
-    #include <unistd.h> // Cho open(), read(), close()
+#include <fcntl.h>  
+#include <unistd.h> 
+#define U64_FORMAT "%lu"
 #endif
+
 #include <stdio.h>
 #include <string.h> 
 #include <stdlib.h>
 #include <ctype.h>
-#include "run.h"
+#include "run.h" 
 
-#define MAX_KEY_HEX 65  // 32*2 + 1
-#define MAX_NONCE_HEX 17 // 8*2 + 1
-#define MAX_PLAIN_HEX (MAX_SIZE * 2 + 1) // 64*2 + 1
+#define MAX_KEY_HEX 65
+#define MAX_NONCE_HEX 17
 #define MAX_STREAM_HEX_BUFFER 200
 
-void perform_salsa20(uint8_t key[32], int key_len, uint8_t nonce[8],
-    uint64_t block_counter, uint8_t* plaintext, size_t length)
+void salsa20_crypt(uint8_t key[32], int key_len, uint8_t nonce[8],
+    uint64_t initial_counter, uint8_t* buffer, size_t length)
 {
+    uint32_t input[16];
+    uint32_t keystream_words[16];
+    uint8_t keystream_bytes[64];
+    uint64_t block_counter = initial_counter;
     size_t i;
+
     const uint8_t constants[17] = "expand 32-byte k";
     const uint8_t constants_16[17] = "expand 16-byte k";
-    uint32_t input[16];
 
     if (key_len == 32) {
         input[0] = U8TO32_LITTLE(constants + 0);
@@ -41,7 +48,7 @@ void perform_salsa20(uint8_t key[32], int key_len, uint8_t nonce[8],
         input[14] = U8TO32_LITTLE(key + 28);
         input[15] = U8TO32_LITTLE(constants + 12);
     }
-    else { // key_len = 16 bytes
+    else { // key_len = 16
         input[0] = U8TO32_LITTLE(constants_16 + 0);
         input[1] = U8TO32_LITTLE(key + 0);
         input[2] = U8TO32_LITTLE(key + 4);
@@ -57,78 +64,44 @@ void perform_salsa20(uint8_t key[32], int key_len, uint8_t nonce[8],
     }
     input[6] = U8TO32_LITTLE(nonce + 0);
     input[7] = U8TO32_LITTLE(nonce + 4);
-    input[8] = (uint32_t)(block_counter & 0xffffffff);
-    input[9] = (uint32_t)(block_counter >> 32);
 
-    uint32_t keystream_words[16];
-    salsa20_block(keystream_words, input);
+    for (size_t offset = 0; offset < length; offset += 64) {
 
-    uint8_t keystream_bytes[MAX_SIZE];
-    for (i = 0; i < 16; ++i) {
-        U32TO8_LITTLE(keystream_bytes + i * 4, keystream_words[i]);
-    }
+        //Cập nhật Block counter
+        input[8] = (uint32_t)(block_counter & 0xffffffff);
+        input[9] = (uint32_t)(block_counter >> 32);
 
-    uint8_t ciphertext[MAX_SIZE + 1] = { 0 };
-    for (i = 0; i < length; ++i) {
-        ciphertext[i] = plaintext[i] ^ keystream_bytes[i];
-    }
-    ciphertext[length] = '\0';
+        //Tạo khối keystream 64 byte MỚI
+        salsa20_block(keystream_words, input);
+        for (i = 0; i < 16; ++i) {
+            U32TO8_LITTLE(keystream_bytes + i * 4, keystream_words[i]);
+        }
 
-    uint8_t decrypted[MAX_SIZE + 1] = { 0 };
-    for (i = 0; i < length; ++i) {
-        decrypted[i] = ciphertext[i] ^ keystream_bytes[i];
-    }
-    decrypted[length] = '\0';
+        size_t bytes_to_xor = 64;
+        if (offset + 64 > length) {
+            bytes_to_xor = length - offset;
+        }
 
-    printf("\nKhoa (%d byte - Dang Hex): \n", key_len);
-    for (i = 0; i < (size_t)key_len; i++) printf("%02x", key[i]);
-    printf("\nNonce (8 byte - Dang Hex): \n");
-    for (i = 0; i < 8; i++) printf("%02x", nonce[i]);
-    printf("\nBlock Counter: %lu\n", block_counter); 
-    printf("Plaintext da nhap: %s\n", plaintext);
-    printf("Plaintext (%zu byte - Dang Hex):\n", length);
-    for (size_t j = 0; j < length; ++j) {
-        printf("%02x ", plaintext[j]);
-        if ((j + 1) % 16 == 0) printf("\n");
-    }
-    if (length % 16 != 0) printf("\n");
-
-    printf("\nKeystream (64 byte - Dang Hex):\n");
-    for (size_t j = 0; j < MAX_SIZE; ++j) {
-        printf("%02x ", keystream_bytes[j]);
-        if ((j + 1) % 16 == 0) printf("\n");
-    }
-
-    printf("\nCiphertext (%zu byte - Dang Hex):\n", length);
-    for (size_t j = 0; j < length; ++j) {
-        printf("%02x ", ciphertext[j]);
-        if ((j + 1) % 16 == 0) printf("\n");
-    }
-    if (length % 16 != 0) printf("\n");
-
-    printf("\nDa giai ma: %s\n", decrypted);
-
-    if (memcmp(plaintext, decrypted, length) == 0) {
-        printf("\nPlaintext khoi phuc dung.\n");
-    }
-    else {
-        printf("\nPlaintext khoi phuc sai.\n");
+        //Mã hóa/Giải mã
+        for (i = 0; i < bytes_to_xor; ++i) {
+            buffer[offset + i] ^= keystream_bytes[i];
+        }
+        block_counter++;
     }
 }
 
-//Hàm cho phép nhập vào từ bàn phím
 void run_user(void) {
     uint8_t key[32] = { 0 };
     uint8_t nonce[8] = { 0 };
     int key_len = 0;
-    uint64_t user_block_counter = 0;
-    uint8_t plaintext[MAX_SIZE + 1] = { 0 };
-    size_t plaintext_len = 0;
+
+    uint8_t buffer[MAX_PLAINTEXT_BUFFER] = { 0 };
+    size_t data_len = 0;
+
     const uint64_t num_blocks_to_generate = 1954; // 1.000.384 bits
     const char* filename = "data.txt";
     FILE* fp = NULL;
-
-    printf("Chon do dai khoa (16 hoac 32 byte): ");
+    printf("\nChon do dai khoa (16 hoac 32 byte): ");
     if (scanf("%d", &key_len) != 1) {
         printf("Nhap khong hop le.\n"); clean_stdin(); return;
     }
@@ -137,65 +110,65 @@ void run_user(void) {
     if (key_len != 16 && key_len != 32) {
         printf("Do dai khoa khong hop le.\n"); return;
     }
+
 #ifdef _WIN32
     NTSTATUS status;
-    //Tạo key ngẫu nhiên
     status = BCryptGenRandom(NULL, key, key_len, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     if (!NT_SUCCESS(status)) {
         printf("Khong the tao key ngau nhien!\n");
         return;
     }
-    printf("Da tao key ngau nhien (%d byte).\n", key_len);
-
-    //Tạo nonce ngẫu nhiên
     status = BCryptGenRandom(NULL, nonce, 8, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     if (!NT_SUCCESS(status)) {
         printf("Khong the tao nonce ngau nhien!\n");
         return;
     }
-    printf("Da tao nonce ngau nhien (8 byte).\n");
+    printf("Da tao key/nonce ngau nhien\n");
 #else
     int fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
         perror("Khong the mo /dev/urandom");
         return;
     }
-
     if (read(fd, key, key_len) != (ssize_t)key_len) {
         printf("Khong doc du %d byte cho key.\n", key_len);
-        close(fd);
-        return;
+        close(fd); return;
     }
-    printf("Da tao key ngau nhien (%d byte).\n", key_len);
-
     if (read(fd, nonce, 8) != 8) {
         printf("Khong doc du 8 byte cho nonce.\n");
-        close(fd);
-        return;
+        close(fd); return;
     }
-    printf("Da tao nonce ngau nhien (8 byte).\n");
     close(fd);
-
+    printf("Da tao key/nonce ngau nhien\n");
 #endif
-    printf("Nhap bo dem khoi cho viec ma hoa (vi du: 0): ");
-    if (scanf("%lu", &user_block_counter) != 1) {
-        printf("Loi doc bo dem khoi.\n"); clean_stdin(); return;
+    printf("Nhap plaintext (toi da %d byte):\n", MAX_PLAINTEXT_BUFFER - 1);
+    if (fgets((char*)buffer, MAX_PLAINTEXT_BUFFER, stdin) == NULL) {
+        buffer[0] = '\0';
     }
-    clean_stdin();
+    buffer[strcspn((char*)buffer, "\n")] = 0;
+    data_len = strlen((const char*)buffer);
+    printf("\nKhoa (%d byte - Dang Hex): \n", key_len);
+    for (int i = 0; i < key_len; i++) printf("%02x", key[i]);
+    printf("\nNonce (8 byte - Dang Hex): \n");
+    for (int i = 0; i < 8; i++) printf("%02x", nonce[i]);
+    printf("\nBo dem khoi bat dau: 0\n"); // Mặc định là 0
+    printf("Plaintext (%zu byte): %s\n", data_len, buffer);
+    printf("\nDang ma hoa...\n");
+    salsa20_crypt(key, key_len, nonce, 0, buffer, data_len);
+    printf("Ciphertext (%zu byte - Dang Hex):\n", data_len);
+    for (size_t j = 0; j < data_len; ++j) {
+        printf("%02x ", buffer[j]);
+        if ((j + 1) % 16 == 0) printf("\n");
+    }
+    if (data_len % 16 != 0) printf("\n");
+    salsa20_crypt(key, key_len, nonce, 0, buffer, data_len);
+    printf("Plaintext sau giai ma: %s\n", buffer);
 
-    printf("Nhap plaintext (toi da %d byte):\n", MAX_SIZE);
-    if (fgets((char*)plaintext, MAX_SIZE + 1, stdin) == NULL) {
-        plaintext[0] = '\0';
-    }
-    plaintext[strcspn((char*)plaintext, "\n")] = 0;
-    plaintext_len = strlen((const char*)plaintext);
-    perform_salsa20(key, key_len, nonce, user_block_counter, plaintext, plaintext_len);
     fp = fopen(filename, "w");
     if (fp == NULL) {
         printf("Khong the mo file %s de ghi.\n", filename);
         return;
     }
-
     uint32_t input[16];
     const uint8_t constants[17] = "expand 32-byte k";
     const uint8_t constants_16[17] = "expand 16-byte k";
@@ -206,8 +179,8 @@ void run_user(void) {
     else { // key_len = 16
         input[0] = U8TO32_LITTLE(constants_16 + 0); input[1] = U8TO32_LITTLE(key + 0); input[2] = U8TO32_LITTLE(key + 4); input[3] = U8TO32_LITTLE(key + 8); input[4] = U8TO32_LITTLE(key + 12); input[5] = U8TO32_LITTLE(constants_16 + 4); input[10] = U8TO32_LITTLE(constants_16 + 8); input[11] = U8TO32_LITTLE(key + 0); input[12] = U8TO32_LITTLE(key + 4); input[13] = U8TO32_LITTLE(key + 8); input[14] = U8TO32_LITTLE(key + 12); input[15] = U8TO32_LITTLE(constants_16 + 12);
     }
-    input[6] = U8TO32_LITTLE(nonce + 0); // Dùng nonce ngẫu nhiên
-    input[7] = U8TO32_LITTLE(nonce + 4); // Dùng nonce ngẫu nhiên
+    input[6] = U8TO32_LITTLE(nonce + 0);
+    input[7] = U8TO32_LITTLE(nonce + 4);
 
     uint32_t keystream_words[16];
     uint8_t keystream_bytes[64];
@@ -231,6 +204,9 @@ void run_user(void) {
         }
     }
     fclose(fp);
+
+    printf("\nDa tao " U64_FORMAT " khoi (" U64_FORMAT " bits) vao file %s\n",
+        num_blocks_to_generate, num_blocks_to_generate * 512, filename);
 }
 
 void run_test_vectors(void) {
@@ -238,10 +214,10 @@ void run_test_vectors(void) {
     uint8_t nonce[8] = { 0 };
     uint64_t block_counter = 0;
     int key_len = 0;
-    uint8_t expected_keystream[64] = { 0 };
+    uint8_t expected_keystream[64];
     bool key_found = false, nonce_found = false, stream_found = false;
     int vector_count = 0;
-    int success_count = 0; // Đếm số test thành công
+    int success_count = 0;
 
     char filename[100] = { 0 };
     printf("Nhap ten file test vector (vi du: test_vector256.txt): ");
@@ -311,7 +287,7 @@ void run_test_vectors(void) {
             memset(hex_buffer, 0, sizeof(hex_buffer));
             strncpy(hex_buffer, start + 5, sizeof(hex_buffer) - 1);
             if (strlen(hex_buffer) != 16) {
-                printf("Loi: IV hex '%s' phai co 16 ky tu.\n", hex_buffer); fclose(fp); return;
+                printf("IV hex '%s' phai co 16 ky tu.\n", hex_buffer); fclose(fp); return;
             }
             if (hex_string_to_bytes(nonce, hex_buffer, 8) != 0) { fclose(fp); return; }
             nonce_found = true;
@@ -345,7 +321,7 @@ void run_test_vectors(void) {
             }
 
             if (strlen(hex_buffer) != 128) {
-                printf("Loi: stream[0..63] hex '%s' phai co 128 ky tu, tim thay %zu.\n", hex_buffer, strlen(hex_buffer)); fclose(fp); return;
+                printf("Stream[0..63] hex '%s' phai co 128 ky tu, tim thay %zu.\n", hex_buffer, strlen(hex_buffer)); fclose(fp); return;
             }
             if (hex_string_to_bytes(expected_keystream, hex_buffer, 64) != 0) { fclose(fp); return; }
             stream_found = true;
@@ -381,24 +357,21 @@ void run_test_vectors(void) {
             for (i = 0; i < (size_t)key_len; i++) printf("%02x", key[i]);
             printf("\nNonce (IV) (8 byte - Dang Hex): \n");
             for (i = 0; i < 8; i++) printf("%02x", nonce[i]);
-
-            printf("\nBo dem khoi (tu stream[0..63]): %lu\n", block_counter);
+            printf("\nBo dem khoi (tu stream[0..63]): " U64_FORMAT "\n", block_counter);
 
             printf("\n--- Keystream[0..63] KY VONG (tu file) ---\n");
-            for (i = 0; i < 64; ++i) { // Đã sửa lỗi 'l'
+            for (i = 0; i < 64; ++i) {
                 printf("%02x ", expected_keystream[i]);
                 if ((i + 1) % 16 == 0) printf("\n");
             }
-
             printf("\n--- Keystream[0..63] DA TAO (tinh toan) ---\n");
             for (i = 0; i < 64; ++i) {
                 printf("%02x ", generated_keystream_bytes[i]);
                 if ((i + 1) % 16 == 0) printf("\n");
             }
-
             if (memcmp(expected_keystream, generated_keystream_bytes, 64) == 0) {
                 printf("\nKeystream tinh toan khop voi file.\n");
-                success_count++; // Tăng biến đếm
+                success_count++;
             }
             else {
                 printf("\nKeystream tinh toan khong khop voi file.\n");
@@ -410,7 +383,6 @@ void run_test_vectors(void) {
         }
     }
     fclose(fp);
-
     if (vector_count == 0) {
         printf("\nKhong tim thay bat ky test vector nao (key, IV, stream[0..63]) trong file.\n");
     }
