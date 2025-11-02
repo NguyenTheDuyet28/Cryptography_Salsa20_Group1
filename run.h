@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "salsa20.h"
 
 #define MAX_SIZE 64 // Plaintext tối đa 64 bytes
