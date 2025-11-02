@@ -1,18 +1,18 @@
 #define _CRT_SECURE_NO_WARNINGS
-
-#include <windows.h>  
-#include <bcrypt.h>   
-
-#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
-
+#ifdef _WIN32
+    #include <windows.h>  
+    #include <bcrypt.h>   
+    #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+    #pragma comment(lib, "bcrypt.lib")
+#else
+    #include <fcntl.h>  // Cho O_RDONLY
+    #include <unistd.h> // Cho open(), read(), close()
+#endif
 #include <stdio.h>
 #include <string.h> 
 #include <stdlib.h>
 #include <ctype.h>
 #include "run.h"
-
-#pragma comment(lib, "bcrypt.lib")
-
 
 #define MAX_KEY_HEX 65  // 32*2 + 1
 #define MAX_NONCE_HEX 17 // 8*2 + 1
@@ -137,9 +137,8 @@ void run_user(void) {
     if (key_len != 16 && key_len != 32) {
         printf("Do dai khoa khong hop le.\n"); return;
     }
-
+#ifdef _WIN32
     NTSTATUS status;
-
     //Tạo key ngẫu nhiên
     status = BCryptGenRandom(NULL, key, key_len, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     if (!NT_SUCCESS(status)) {
@@ -155,6 +154,29 @@ void run_user(void) {
         return;
     }
     printf("Da tao nonce ngau nhien (8 byte).\n");
+#else
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd == -1) {
+        perror("Khong the mo /dev/urandom");
+        return;
+    }
+
+    if (read(fd, key, key_len) != (ssize_t)key_len) {
+        printf("Khong doc du %d byte cho key.\n", key_len);
+        close(fd);
+        return;
+    }
+    printf("Da tao key ngau nhien (%d byte).\n", key_len);
+
+    if (read(fd, nonce, 8) != 8) {
+        printf("Khong doc du 8 byte cho nonce.\n", 8);
+        close(fd);
+        return;
+    }
+    printf("Da tao nonce ngau nhien (8 byte).\n");
+    close(fd);
+
+#endif
     printf("Nhap bo dem khoi cho viec ma hoa (vi du: 0): ");
     if (scanf("%llu", &user_block_counter) != 1) {
         printf("Loi doc bo dem khoi.\n"); clean_stdin(); return;
