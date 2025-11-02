@@ -1,4 +1,8 @@
-﻿#include "salsa20.h"
+#include "salsa20.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 uint32_t U8TO32_LITTLE(const uint8_t* p)
 {
@@ -39,7 +43,6 @@ void salsa20_block(uint32_t out[16], uint32_t const in[16])
 		out[i] = x[i] + in[i];
 }
 
-
 void clean_stdin(void) {
 	int c;
 	while ((c = getchar()) != '\n' && c != EOF);
@@ -60,7 +63,7 @@ int hex_string_to_bytes(uint8_t* dest, const char* src, size_t dest_len) {
 	size_t len = strlen(src);
 	if (len % 2 != 0 || len / 2 != dest_len) {
 		printf("Loi: Chuoi hex co do dai khong hop le (can %zu ky tu, nhan duoc %zu).\n", dest_len * 2, len);
-		return -1; // Chuỗi hex phải có độ dài chẵn
+		return -1;
 	}
 
 	for (size_t i = 0; i < dest_len; ++i) {
@@ -69,10 +72,9 @@ int hex_string_to_bytes(uint8_t* dest, const char* src, size_t dest_len) {
 
 		if (high == -1 || low == -1) {
 			printf("Loi: Chuoi hex chua ky tu khong hop le.\n");
-			return -1; // Ký tự không hợp lệ
+			return -1;
 		}
 		dest[i] = (uint8_t)((high << 4) | low);
 	}
 	return 0; // Thành công
-
 }
